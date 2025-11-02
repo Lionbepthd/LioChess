@@ -5,7 +5,7 @@ export function parsePgnToMoves(pgn: string) {
   const moves: { fen: string; san: string; ply: number }[] = [];
 
   try {
-    game.loadPgn(pgn); // Hapus opsi { sloppy: true }
+    game.loadPgn(pgn);
   } catch (e) {
     console.error('PGN parsing error:', e);
     return [];
