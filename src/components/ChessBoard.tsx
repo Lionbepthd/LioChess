@@ -1,4 +1,4 @@
-import { Chessboard } from 'react-chessboard';
+import { Chessboard, type Arrow } from 'react-chessboard'; // <-- Tambahkan type Arrow
 
 type Square = string;
 
@@ -21,11 +21,12 @@ export default function ChessBoard({
     };
   };
 
-  const getCustomArrows = () => {
+  const getCustomArrows = (): Arrow[] => { // <-- Tambahkan tipe return Arrow[]
     if (!bestMove || bestMove.length !== 4) return [];
     const from = bestMove.substring(0, 2) as Square;
     const to = bestMove.substring(2, 4) as Square;
-    return [{ from, to }];
+    // Format yang benar untuk Arrow: { from: string, to: string }
+    return [{ from, to }]; // <-- Ini sudah benar, tinggal tipe return nya
   };
 
   return (
@@ -34,9 +35,9 @@ export default function ChessBoard({
         position={fen}
         arePiecesDraggable={false}
         customSquareStyles={getCustomStyles()}
-        customArrows={getCustomArrows()} // <-- ditambahkan
+        customArrows={getCustomArrows()} // <-- Sekarang type-safe
         boardOrientation={boardOrientation}
-        customArrowColor="#1e40af" // <-- opsional: warna panah
+        customArrowColor="#1e40af"
       />
     </div>
   );
