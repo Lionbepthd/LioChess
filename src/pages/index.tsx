@@ -4,6 +4,7 @@ import EvaluationChart from '../components/EvaluationChart';
 import { StockfishWorker } from '../lib/stockfishWorker';
 import { parsePgnToMoves } from '../lib/pgnParser';
 import { detectBlunders } from '../lib/blunderDetector';
+import { detectOpening } from '../lib/openingDetector';
 import { saveAnalysisToStorage, loadAnalysisFromStorage } from '../lib/storage';
 import { downloadFile } from '../lib/utils';
 import type { AnalysisResult } from '../types';
@@ -16,7 +17,18 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [analysisHistory, setAnalysisHistory] = useState<Record<number, AnalysisResult>>({});
   const [blunders, setBlunders] = useState<number[]>([]);
+  const [inaccuracies, setInaccuracies] = useState<number[]>([]); // <-- ditambahkan
+  const [dubious, setDubious] = useState<number[]>([]); // <-- ditambahkan
+  const [comments, setComments] = useState<Record<number, string>>({}); // <-- ditambahkan
+  const [opening, setOpening] = useState(''); // <-- ditambahkan
   const [loading, setLoading] = useState(false);
+  const [analysisDepth, setAnalysisDepth] = useState(10); // <-- ditambahkan
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'analyzing' | 'ready'>('idle'); // <-- ditambahkan
+  const [isAnalyzingBatch, setIsAnalyzingBatch] = useState(false); // <-- ditambahkan
+  const [currentBatchPly, setCurrentBatchPly] = useState(0); // <-- ditambahkan
+  const [showBatchComplete, setShowBatchComplete] = useState(false); // <-- ditambahkan
+  const [darkMode, setDarkMode] = useState(false); // <-- ditambahkan (opsional)
+
   const sfRef = useRef<StockfishWorker | null>(null);
 
   // Inisialisasi: coba muat dari localStorage
@@ -30,7 +42,14 @@ export default function Home() {
         setInput(saved.pgn);
         setAnalysisHistory(saved.analysisHistory || {});
         setBlunders(saved.blunders || []);
+        setAnalysisDepth(saved.analysisDepth || 10); // <-- load depth
         setCurrentPly(0);
+        // Karena history sudah ada, kita panggil deteksi ulang
+        const { blunders, inaccuracies, dubious, comments } = detectBlunders(saved.analysisHistory, 1.0);
+        setBlunders(blunders);
+        setInaccuracies(inaccuracies);
+        setDubious(dubious);
+        setComments(comments);
       }
     }
 
@@ -41,40 +60,37 @@ export default function Home() {
   // Simpan ke localStorage saat ada perubahan signifikan
   useEffect(() => {
     if (moves.length > 0 && Object.keys(analysisHistory).length > 0) {
-      saveAnalysisToStorage(originalPgn, analysisHistory, blunders);
+      saveAnalysisToStorage(originalPgn, analysisHistory, blunders, analysisDepth); // <-- kirim depth
     }
-  }, [analysisHistory, blunders, originalPgn, moves.length]);
+  }, [analysisHistory, blunders, originalPly, moves.length, analysisDepth]);
 
-  // Analisis otomatis saat langkah berubah
+  // Analisis otomatis saat langkah berubah (jika belum dianalisis)
   useEffect(() => {
-    if (moves.length === 0 || !sfRef.current) return;
-    const ply = currentPly;
-    const currentFen = moves[ply]?.fen;
+    if (moves.length === 0 || !sfRef.current || analysisHistory[currentPly]) return;
+    const currentFen = moves[currentPly]?.fen;
     if (!currentFen) return;
 
-    if (analysisHistory[ply]) {
-      setAnalysis(analysisHistory[ply]);
-      return;
-    }
-
     setAnalysis(null);
-    sfRef.current.analyze(currentFen, 10).then((result) => {
+    setAnalysisStatus('analyzing');
+    sfRef.current.analyze(currentFen, analysisDepth).then((result) => {
       const newAnalysis = {
         score: result.score,
         bestmove: result.bestmove,
+        comment: '', // Akan diisi oleh deteksi nanti
       };
       setAnalysis(newAnalysis);
-      setAnalysisHistory((prev) => ({ ...prev, [ply]: newAnalysis }));
-    });
-  }, [currentPly, moves, analysisHistory]);
+      setAnalysisHistory((prev) => ({ ...prev, [currentPly]: newAnalysis }));
+      setAnalysisStatus('ready');
 
-  // Deteksi blunder saat history berubah
-  useEffect(() => {
-    if (Object.keys(analysisHistory).length > 1) {
-      const detected = detectBlunders(analysisHistory, 1.0);
-      setBlunders(detected);
-    }
-  }, [analysisHistory]);
+      // Deteksi komentar & blunder setelah satu langkah baru
+      const updatedHistory = { ...analysisHistory, [currentPly]: newAnalysis };
+      const { blunders, inaccuracies, dubious, comments } = detectBlunders(updatedHistory, 1.0);
+      setBlunders(blunders);
+      setInaccuracies(inaccuracies);
+      setDubious(dubious);
+      setComments(comments);
+    });
+  }, [currentPly, moves, analysisHistory, analysisDepth]);
 
   const fetchGamesFromChessCom = async (username: string) => {
     setLoading(true);
@@ -108,6 +124,66 @@ export default function Home() {
     setCurrentPly(0);
     setAnalysisHistory({});
     setBlunders([]);
+    setInaccuracies([]);
+    setDubious([]);
+    setComments({});
+    setOpening(detectOpening(parsedMoves)); // <-- tambahkan deteksi opening
+  };
+
+  const runBatchAnalysis = async () => {
+    if (!sfRef.current || moves.length === 0 || isAnalyzingBatch) return;
+
+    setIsAnalyzingBatch(true);
+    setAnalysisStatus('analyzing');
+    const newAnalysisHistory: Record<number, AnalysisResult> = {};
+
+    for (let i = 0; i < moves.length; i++) {
+      const { fen } = moves[i];
+      if (!fen) continue;
+
+      setCurrentBatchPly(i);
+
+      try {
+        const result = await sfRef.current.analyze(fen, analysisDepth);
+        newAnalysisHistory[i] = {
+          score: result.score,
+          bestmove: result.bestmove,
+          comment: '', // Akan diisi oleh deteksi nanti
+        };
+      } catch (e) {
+        console.error(`Gagal menganalisis langkah ${i}:`, e);
+        newAnalysisHistory[i] = {
+          score: 0,
+          bestmove: '',
+          comment: 'Gagal analisis',
+        };
+      }
+    }
+
+    setAnalysisHistory(newAnalysisHistory);
+
+    // Deteksi blunder, inaccuracy, dubious, dan komentar setelah semua selesai
+    const { blunders, inaccuracies, dubious, comments } = detectBlunders(newAnalysisHistory, 1.0);
+    setBlunders(blunders);
+    setInaccuracies(inaccuracies);
+    setDubious(dubious);
+    setComments(comments);
+
+    setIsAnalyzingBatch(false);
+    setAnalysisStatus('ready');
+    setCurrentBatchPly(0);
+    // Update analisis tampilan jika sedang di langkah saat ini
+    setAnalysis(newAnalysisHistory[currentPly] || null);
+
+    // Tampilkan notifikasi selesai
+    setShowBatchComplete(true);
+    setTimeout(() => setShowBatchComplete(false), 3000);
+  };
+
+  const goToPly = (ply: number) => {
+    if (ply >= 0 && ply < moves.length) {
+      setCurrentPly(ply);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -121,17 +197,28 @@ export default function Home() {
     }
   };
 
-  const goToPly = (ply: number) => {
-    if (ply >= 0 && ply < moves.length) {
-      setCurrentPly(ply);
-    }
-  };
-
   const currentFen = moves[currentPly]?.fen || 'start';
   const bestMove = analysis?.bestmove;
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'system-ui', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: '2rem', fontFamily: 'system-ui', maxWidth: '900px', margin: '0 auto', backgroundColor: darkMode ? '#1f2937' : 'white', color: darkMode ? 'white' : 'black' }}>
+      {/* Dark Mode Toggle */}
+      <button
+        onClick={() => setDarkMode(!darkMode)}
+        style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          padding: '0.5rem',
+          backgroundColor: darkMode ? '#4b5563' : '#e5e7eb',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+        }}
+      >
+        {darkMode ? '☀️' : '🌙'}
+      </button>
+
       <h1 style={{ textAlign: 'center', marginBottom: '1.5rem' }}>LioChess Analyzer</h1>
 
       <form onSubmit={handleSubmit} style={{ marginBottom: '2rem' }}>
@@ -140,7 +227,7 @@ export default function Home() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Username Chess.com atau paste PGN di sini..."
           rows={4}
-          style={{ width: '100%', padding: '0.75rem', marginBottom: '0.75rem' }}
+          style={{ width: '100%', padding: '0.75rem', marginBottom: '0.75rem', backgroundColor: darkMode ? '#374151' : 'white', color: darkMode ? 'white' : 'black' }}
         />
         <button
           type="submit"
@@ -160,6 +247,61 @@ export default function Home() {
 
       {moves.length > 0 && (
         <>
+          {/* Slider Depth */}
+          <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+            <label htmlFor="depth-slider" style={{ marginRight: '0.5rem' }}>
+              <strong>Depth Analisis:</strong> {analysisDepth}
+            </label>
+            <input
+              id="depth-slider"
+              type="range"
+              min="5"
+              max="20"
+              value={analysisDepth}
+              onChange={(e) => setAnalysisDepth(parseInt(e.target.value))}
+              disabled={isAnalyzingBatch}
+              style={{ width: '200px', verticalAlign: 'middle' }}
+            />
+          </div>
+
+          {/* Tombol Batch Analysis */}
+          <div style={{ textAlign: 'center', margin: '1.5rem 0' }}>
+            <button
+              onClick={runBatchAnalysis}
+              disabled={isAnalyzingBatch}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: isAnalyzingBatch ? '#94a3b8' : '#7c3aed',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isAnalyzingBatch ? 'not-allowed' : 'pointer',
+                marginBottom: '1rem',
+              }}
+            >
+              {isAnalyzingBatch ? `Analisis... (${currentBatchPly} / ${moves.length - 1})` : '🔄 Analisis Batch Semua Langkah'}
+            </button>
+            {isAnalyzingBatch && (
+              <div style={{ color: '#64748b', fontSize: '0.9rem' }}>
+                Proses analisis berjalan di browser kamu...
+              </div>
+            )}
+            {/* Status Analisis */}
+            {analysisStatus === 'analyzing' && !isAnalyzingBatch && (
+              <div style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                Menganalisis posisi...
+              </div>
+            )}
+          </div>
+
+          {/* Opening */}
+          {opening && (
+            <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: darkMode ? '#374151' : '#f1f5f9', borderRadius: '4px' }}>
+              <strong>Opening:</strong> {opening}
+            </div>
+          )}
+
+          {/* Navigasi Langkah */}
           <div style={{ textAlign: 'center', margin: '1.5rem 0' }}>
             <button onClick={() => goToPly(0)} disabled={currentPly === 0} style={{ margin: '0 0.25rem' }}>
               ⏪
@@ -193,9 +335,9 @@ export default function Home() {
               style={{
                 marginTop: '1rem',
                 padding: '1rem',
-                background: '#f8fafc',
+                background: darkMode ? '#374151' : '#f8fafc',
                 borderRadius: '8px',
-                border: '1px solid #e2e8f0',
+                border: `1px solid ${darkMode ? '#4b5563' : '#e2e8f0'}`,
               }}
             >
               <div>
@@ -207,15 +349,85 @@ export default function Home() {
               <div>
                 <strong>Best move:</strong> {analysis.bestmove}
               </div>
-              {blunders.includes(currentPly) && (
-                <div style={{ color: '#dc2626', fontWeight: 'bold', marginTop: '0.5rem' }}>
-                  ⚠️ Blunder terdeteksi!
+              {comments[currentPly] && (
+                <div style={{ color: blunders.includes(currentPly) ? '#dc2626' : inaccuracies.includes(currentPly) ? '#f59e0b' : dubious.includes(currentPly) ? '#6366f1' : '#64748b', fontWeight: 'bold', marginTop: '0.5rem' }}>
+                  {comments[currentPly]}
                 </div>
               )}
             </div>
           )}
 
-          <EvaluationChart moves={moves} analysisHistory={analysisHistory} />
+          {/* Navigasi Cepat */}
+          {blunders.length > 0 && (
+            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+              <strong>Blunders:</strong>
+              {blunders.map(ply => (
+                <button
+                  key={`blunder-${ply}`}
+                  onClick={() => goToPly(ply)}
+                  style={{
+                    margin: '0 0.25rem',
+                    padding: '0.25rem 0.5rem',
+                    backgroundColor: currentPly === ply ? '#dc2626' : darkMode ? '#4b5563' : '#e2e8f0',
+                    color: currentPly === ply ? 'white' : darkMode ? 'white' : 'black',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {ply}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {inaccuracies.length > 0 && (
+            <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
+              <strong>Inaccuracies:</strong>
+              {inaccuracies.map(ply => (
+                <button
+                  key={`inacc-${ply}`}
+                  onClick={() => goToPly(ply)}
+                  style={{
+                    margin: '0 0.25rem',
+                    padding: '0.25rem 0.5rem',
+                    backgroundColor: currentPly === ply ? '#f59e0b' : darkMode ? '#4b5563' : '#e2e8f0',
+                    color: currentPly === ply ? 'white' : darkMode ? 'white' : 'black',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {ply}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {dubious.length > 0 && (
+            <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
+              <strong>Dubious Moves:</strong>
+              {dubious.map(ply => (
+                <button
+                  key={`dub-${ply}`}
+                  onClick={() => goToPly(ply)}
+                  style={{
+                    margin: '0 0.25rem',
+                    padding: '0.25rem 0.5rem',
+                    backgroundColor: currentPly === ply ? '#6366f1' : darkMode ? '#4b5563' : '#e2e8f0',
+                    color: currentPly === ply ? 'white' : darkMode ? 'white' : 'black',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {ply}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <EvaluationChart moves={moves} analysisHistory={analysisHistory} blunders={blunders} inaccuracies={inaccuracies} dubious={dubious} />
 
           {Object.keys(analysisHistory).length > 0 && (
             <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
@@ -228,7 +440,7 @@ export default function Home() {
                     if (!ana) continue;
                     const moveNotation = ply === 0 ? 'Start' : `${Math.ceil(ply / 2)}. ${move.san}`;
                     reportLines.push(
-                      `${moveNotation.padEnd(12)} | Eval: ${ana.score.toString().padEnd(6)} | Best: ${ana.bestmove}`
+                      `${moveNotation.padEnd(12)} | Eval: ${ana.score.toString().padEnd(6)} | Best: ${ana.bestmove} | Comment: ${comments[ply] || ''}`
                     );
                   }
                   downloadFile('liochess-analysis.txt', reportLines.join('\n'));
@@ -251,6 +463,7 @@ export default function Home() {
                     fen: move.fen,
                     san: ply === 0 ? 'start' : move.san,
                     analysis: analysisHistory[ply] || null,
+                    comment: comments[ply] || null,
                   }));
                   downloadFile('liochess-analysis.json', JSON.stringify(json, null, 2));
                 }}
@@ -269,9 +482,25 @@ export default function Home() {
         </>
       )}
 
-      <footer style={{ textAlign: 'center', marginTop: '3rem', color: '#64748b' }}>
+      {/* Notifikasi Batch Selesai */}
+      {showBatchComplete && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          backgroundColor: '#10b981',
+          color: 'white',
+          padding: '1rem',
+          borderRadius: '8px',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+        }}>
+          ✅ Analisis batch selesai!
+        </div>
+      )}
+
+      <footer style={{ textAlign: 'center', marginTop: '3rem', color: darkMode ? '#9ca3af' : '#64748b' }}>
         © {new Date().getFullYear()} LIONBEPTHD • LioChess
       </footer>
     </div>
   );
-        }
+}
