@@ -1,12 +1,15 @@
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { AnalysisResult } from '../types';
 
 interface Props {
   moves: { san: string; ply: number }[];
   analysisHistory: Record<number, AnalysisResult>;
+  blunders: number[];       // <-- ditambahkan
+  inaccuracies: number[];   // <-- ditambahkan
+  dubious: number[];        // <-- ditambahkan
 }
 
-export default function EvaluationChart({ moves, analysisHistory }: Props) {
+export default function EvaluationChart({ moves, analysisHistory, blunders, inaccuracies, dubious }: Props) {
   const data = moves.map((move, index) => {
     const ana = analysisHistory[index];
     if (!ana) return null;
@@ -47,6 +50,36 @@ export default function EvaluationChart({ moves, analysisHistory }: Props) {
             dot={{ r: 3 }}
             activeDot={{ r: 6, stroke: '#1e40af' }}
           />
+          {/* Highlight blunder */}
+          {blunders.map(ply => (
+            <ReferenceLine
+              key={`blunder-${ply}`}
+              x={ply}
+              stroke="#dc2626"
+              strokeDasharray="3 3"
+              label={{ value: 'Blunder', position: 'top', fill: '#dc2626' }}
+            />
+          ))}
+          {/* Highlight inaccuracy */}
+          {inaccuracies.map(ply => (
+            <ReferenceLine
+              key={`inacc-${ply}`}
+              x={ply}
+              stroke="#f59e0b"
+              strokeDasharray="3 3"
+              label={{ value: 'Inacc', position: 'top', fill: '#f59e0b' }}
+            />
+          ))}
+          {/* Highlight dubious */}
+          {dubious.map(ply => (
+            <ReferenceLine
+              key={`dub-${ply}`}
+              x={ply}
+              stroke="#6366f1"
+              strokeDasharray="3 3"
+              label={{ value: 'Dubious', position: 'top', fill: '#6366f1' }}
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
