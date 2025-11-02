@@ -1,4 +1,3 @@
-// src/lib/pgnParser.ts
 import { Chess } from 'chess.js';
 
 export function parsePgnToMoves(pgn: string) {
