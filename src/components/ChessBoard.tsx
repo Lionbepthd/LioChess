@@ -1,4 +1,10 @@
-import { Chessboard, type Arrow } from 'react-chessboard'; // <-- Tambahkan type Arrow
+import { Chessboard } from 'react-chessboard'; // <-- Hapus 'Arrow' dari sini
+
+// Definisikan tipe Arrow secara lokal
+type Arrow = {
+  from: string;
+  to: string;
+};
 
 type Square = string;
 
@@ -21,12 +27,11 @@ export default function ChessBoard({
     };
   };
 
-  const getCustomArrows = (): Arrow[] => { // <-- Tambahkan tipe return Arrow[]
+  const getCustomArrows = (): Arrow[] => { // <-- Gunakan tipe lokal
     if (!bestMove || bestMove.length !== 4) return [];
     const from = bestMove.substring(0, 2) as Square;
     const to = bestMove.substring(2, 4) as Square;
-    // Format yang benar untuk Arrow: { from: string, to: string }
-    return [{ from, to }]; // <-- Ini sudah benar, tinggal tipe return nya
+    return [{ from, to }]; // <-- Format ini benar
   };
 
   return (
