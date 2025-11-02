@@ -1,0 +1,22 @@
+{
+  "name": "liochess",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "chess.js": "^1.0.0-beta.6",
+    "next": "latest",
+    "react": "18",
+    "react-chessboard": "^4.5.0",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "typescript": "latest"
+  }
+}
