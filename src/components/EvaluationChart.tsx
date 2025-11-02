@@ -4,9 +4,9 @@ import { AnalysisResult } from '../types';
 interface Props {
   moves: { san: string; ply: number }[];
   analysisHistory: Record<number, AnalysisResult>;
-  blunders: number[];       // <-- ditambahkan
-  inaccuracies: number[];   // <-- ditambahkan
-  dubious: number[];        // <-- ditambahkan
+  blunders: number[];
+  inaccuracies: number[];
+  dubious: number[];
 }
 
 export default function EvaluationChart({ moves, analysisHistory, blunders, inaccuracies, dubious }: Props) {
@@ -50,7 +50,6 @@ export default function EvaluationChart({ moves, analysisHistory, blunders, inac
             dot={{ r: 3 }}
             activeDot={{ r: 6, stroke: '#1e40af' }}
           />
-          {/* Highlight blunder */}
           {blunders.map(ply => (
             <ReferenceLine
               key={`blunder-${ply}`}
@@ -60,7 +59,6 @@ export default function EvaluationChart({ moves, analysisHistory, blunders, inac
               label={{ value: 'Blunder', position: 'top', fill: '#dc2626' }}
             />
           ))}
-          {/* Highlight inaccuracy */}
           {inaccuracies.map(ply => (
             <ReferenceLine
               key={`inacc-${ply}`}
@@ -70,7 +68,6 @@ export default function EvaluationChart({ moves, analysisHistory, blunders, inac
               label={{ value: 'Inacc', position: 'top', fill: '#f59e0b' }}
             />
           ))}
-          {/* Highlight dubious */}
           {dubious.map(ply => (
             <ReferenceLine
               key={`dub-${ply}`}
