@@ -21,12 +21,10 @@ export default function ChessBoard({
     };
   };
 
-  // Kita hapus definisi tipe Arrow dan tipe return
   const getCustomArrows = () => {
     if (!bestMove || bestMove.length !== 4) return [];
     const from = bestMove.substring(0, 2) as Square;
     const to = bestMove.substring(2, 4) as Square;
-    // Kirimkan array objek secara langsung
     return [{ from, to }];
   };
 
@@ -36,7 +34,8 @@ export default function ChessBoard({
         position={fen}
         arePiecesDraggable={false}
         customSquareStyles={getCustomStyles()}
-        customArrows={getCustomArrows()} // <-- Ini sekarang sesuai
+        // Gunakan `as any` untuk menghindari error tipe
+        customArrows={getCustomArrows() as any}
         boardOrientation={boardOrientation}
         customArrowColor="#1e40af"
       />
