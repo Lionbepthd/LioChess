@@ -2,14 +2,14 @@ export function saveAnalysisToStorage(
   pgn: string,
   analysisHistory: any,
   blunders: number[],
-  analysisDepth: number // <-- ditambahkan
+  analysisDepth: number
 ) {
   try {
     const data = {
       pgn,
       analysisHistory,
       blunders,
-      analysisDepth, // <-- ditambahkan
+      analysisDepth,
       timestamp: Date.now(),
     };
     localStorage.setItem('liochess-cache', JSON.stringify(data));
@@ -27,7 +27,7 @@ export function loadAnalysisFromStorage() {
       pgn: saved.pgn,
       analysisHistory: saved.analysisHistory,
       blunders: saved.blunders || [],
-      analysisDepth: saved.analysisDepth || 10, // <-- default jika tidak ada
+      analysisDepth: saved.analysisDepth || 10,
       timestamp: saved.timestamp,
     };
   } catch (e) {
