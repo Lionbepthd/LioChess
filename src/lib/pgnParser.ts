@@ -1,3 +1,4 @@
+// src/lib/pgnParser.ts
 import { Chess } from 'chess.js';
 
 export function parsePgnToMoves(pgn: string) {
@@ -5,8 +6,9 @@ export function parsePgnToMoves(pgn: string) {
   const moves: { fen: string; san: string; ply: number }[] = [];
 
   try {
-    game.loadPgn(pgn, { sloppy: true });
+    game.loadPgn(pgn); // Hapus opsi { sloppy: true }
   } catch (e) {
+    console.error('PGN parsing error:', e);
     return [];
   }
 
